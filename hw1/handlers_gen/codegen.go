@@ -1,3 +1,6 @@
+// "Оставь веру всяк сюда входящий" - Данте Алигьери
+// Божественная комедия, («Ад», песнь 3, строфа 3)
+
 package main
 
 import (
@@ -124,14 +127,22 @@ func main() {
 	httpHandlers := HTTPHandlers{}
 	handlerParams := HandlerParams{}
 
+	// Ищем объявления структур
 	for _, dec := range node.Decls {
+		// ast.GenDecl парсит import, constant, type or variable declaration
+		// Нам нужен type
 		genDecs, ok := dec.(*ast.GenDecl)
+		// Если спарсил не функцию
 		if ok {
 			for _, spec := range genDecs.Specs {
 				if currType, ok := spec.(*ast.TypeSpec); ok {
+					// Если спарсили type
 					typeName := currType.Name.Name
 					if currStruct, ok := currType.Type.(*ast.StructType); ok && strings.Contains(typeName, "Params") {
+						// Если спарсили struct
 						handlerParams[typeName] = &ParamField{}
+
+						// Идем по массиву полей структуры и вытаскиваем тип поля и его структурные теги
 						for _, field := range currStruct.Fields.List {
 							fieldName := field.Names[0].Name
 							fieldType := parseFieldType(field)
