@@ -85,12 +85,18 @@ func (srv *{{$apiStructName}}) {{$handler.Name}}HTTPHandler(w http.ResponseWrite
 `))
 )
 
-type HandlerParams = map[string][][]string
+type ParamField struct {
+	Type   string
+	Fields [][]string
+}
+
+type HandlerParams = map[string]*ParamField
 
 type HttpHandlerData struct {
 	Name             string
 	Params           GenParams
 	ParamsStructName string
+	QueryParams      *ParamField
 }
 
 type serverStructName = string
@@ -125,11 +131,13 @@ func main() {
 				if currType, ok := spec.(*ast.TypeSpec); ok {
 					typeName := currType.Name.Name
 					if currStruct, ok := currType.Type.(*ast.StructType); ok && strings.Contains(typeName, "Params") {
-						handlerParams[typeName] = [][]string{}
+						handlerParams[typeName] = &ParamField{}
 						for _, field := range currStruct.Fields.List {
 							fieldName := field.Names[0].Name
+							fieldType := parseFieldType(field)
 							fieldTags := clearStructTags(field.Tag.Value)
-							handlerParams[typeName] = append(handlerParams[typeName], []string{fieldName, fieldTags})
+							handlerParams[typeName].Type = fieldType
+							handlerParams[typeName].Fields = append(handlerParams[typeName].Fields, []string{fieldName, fieldTags})
 						}
 					}
 				}
@@ -163,7 +171,15 @@ func main() {
 		}
 	}
 
-	fmt.Printf("%+v\n", handlerParams)
+	for _, v := range httpHandlers {
+		for _, handler := range v {
+			queryParams, ok := handlerParams[handler.ParamsStructName]
+			if ok {
+				handler.QueryParams = queryParams
+				fmt.Printf("handler: %s %v \n", handler.ParamsStructName, queryParams)
+			}
+		}
+	}
 
 	writeHTTPHandlers(out, httpHandlers)
 }
@@ -204,6 +220,18 @@ func parseRecieverParamsStructName(funcDecl *ast.FuncDecl) (typeName string) {
 				typeName = xv.Name
 			}
 		}
+	}
+	return
+}
+
+func parseFieldType(field *ast.Field) (typeName string) {
+	switch xv := field.Type.(type) {
+	case *ast.StarExpr:
+		if si, ok := xv.X.(*ast.Ident); ok {
+			typeName = si.Name
+		}
+	case *ast.Ident:
+		typeName = xv.Name
 	}
 	return
 }
