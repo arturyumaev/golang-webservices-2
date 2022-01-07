@@ -31,7 +31,7 @@ func response(w http.ResponseWriter, apiErr *ApiError, res interface{}) {
 		Response: res,
 	}
 	bytes, _ := json.Marshal(resp)
-	fmt.Println("    response:" + string(bytes) + "\n")
+	// fmt.Println("    response:" + string(bytes) + "\n")
 	w.Write(bytes)
 }
 `))
@@ -60,19 +60,32 @@ func (srv *{{$apiStructName}}) {{$handler.Name}}HTTPHandler(w http.ResponseWrite
 		return
 	}
 	{{end}}
+	{{if eq $handler.Params.Method "POST" }}
+	headerValue, ok := r.Header["X-Auth"]
+	if !ok {
+		response(w, &ApiError{http.StatusForbidden, errors.New("unauthorized")}, nil)
+		return
+	}
+	if len(headerValue) != 1 && headerValue[0] != "100500" {
+		response(w, &ApiError{http.StatusForbidden, errors.New("unauthorized")}, nil)
+		return
+	}
+	{{end}}
 
 	ctx := context.Background()
-
 	data, err := srv.{{$handler.Name}}(ctx, {{$handler.ParamsStructName}}{})
 	if err != nil {
 		response(w, &ApiError{http.StatusOK, err}, nil)
 		return
 	}
+
 	response(w, &ApiError{http.StatusOK, errors.New("")}, data)
 }
 {{end}}
 `))
 )
+
+type HandlerParams = map[string][][]string
 
 type HttpHandlerData struct {
 	Name             string
@@ -90,7 +103,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	out, _ := os.Create(os.Args[2])
 
 	fmt.Fprintln(out, `package `+node.Name.Name)
@@ -99,15 +111,29 @@ func main() {
 	fmt.Fprintln(out, `import "encoding/json"`)
 	fmt.Fprintln(out, `import "errors"`)
 	fmt.Fprintln(out, `import "context"`)
-	fmt.Fprintln(out, `import "fmt"`)
+	// fmt.Fprintln(out, `import "fmt"`)
 	fmt.Fprintln(out)
 	respAction.Execute(out, nil)
 
 	httpHandlers := HTTPHandlers{}
+	handlerParams := HandlerParams{}
 
 	for _, dec := range node.Decls {
-		_, ok := dec.(*ast.GenDecl)
+		genDecs, ok := dec.(*ast.GenDecl)
 		if ok {
+			for _, spec := range genDecs.Specs {
+				if currType, ok := spec.(*ast.TypeSpec); ok {
+					typeName := currType.Name.Name
+					if currStruct, ok := currType.Type.(*ast.StructType); ok && strings.Contains(typeName, "Params") {
+						handlerParams[typeName] = [][]string{}
+						for _, field := range currStruct.Fields.List {
+							fieldName := field.Names[0].Name
+							fieldTags := clearStructTags(field.Tag.Value)
+							handlerParams[typeName] = append(handlerParams[typeName], []string{fieldName, fieldTags})
+						}
+					}
+				}
+			}
 		}
 
 		funcDecl, ok := dec.(*ast.FuncDecl)
@@ -136,6 +162,8 @@ func main() {
 			}
 		}
 	}
+
+	fmt.Printf("%+v\n", handlerParams)
 
 	writeHTTPHandlers(out, httpHandlers)
 }
@@ -191,4 +219,8 @@ func writeHTTPHandlers(out *os.File, data HTTPHandlers) {
 		}
 		serveHttpTmp.Execute(out, templateData)
 	}
+}
+
+func clearStructTags(tags string) string {
+	return tags[1+len("apivalidator:") : len(tags)-1]
 }
