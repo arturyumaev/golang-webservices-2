@@ -84,6 +84,7 @@ func (srv *MyApi) Profile(ctx context.Context, in ProfileParams) (*User, error) 
 
 	srv.mu.RLock()
 	user, exist := srv.users[in.Login]
+	fmt.Printf("%+v\n", srv.users)
 	srv.mu.RUnlock()
 	if !exist {
 		return nil, ApiError{http.StatusNotFound, fmt.Errorf("user not exist")}
